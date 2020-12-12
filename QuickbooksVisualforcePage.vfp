@@ -1,0 +1,25 @@
+<apex:page controller="QuickBooksIntegrationCTRL" lightningStylesheets="true">
+    <apex:form id="theForm" >
+        <apex:actionstatus id="statusLinkdln">
+            <apex:facet name="start">
+                <div class="waitingSearchDiv" id="el_loading" style="background-color: #fbfbfb; height:100%;opacity:0.65;width:100%;">
+                    <div class="waitingHolder" style="top: 100px; width: 91px;">
+                        <img class="waitingImage" src="/img/loading.gif" title="Please Wait..." />
+                        <span class="waitingDescription">Loading...</span>
+                        </div>
+                    </div>
+                </apex:facet>
+          </apex:actionstatus>
+        <apex:pageMessages > </apex:pageMessages>
+        <apex:pageBlock title="QuickBooks Online Integration">  
+            <center>
+            <apex:outputLabel rendered="{!ToggleButton}" >Click Authorize Quickbooks</apex:outputLabel>
+            <apex:outputLabel rendered="{!!ToggleButton}" >Click to get Access Token</apex:outputLabel>
+            <apex:commandButton action="{!AuthoriztionWithQBO}" rendered="{!ToggleButton}" rerender="theForm" status="statusLinkdln" value="Authorize Quickbooks"/>
+            <apex:commandButton action="{!GetAccessCodeFromQBO}" rendered="{!!ToggleButton}" rerender="theForm" status="statusLinkdln" value="Get Access To Start"/>
+        	</center>
+            <apex:commandButton action="{!refreshTokenMethod}"  rerender="theForm" status="statusLinkdln" value="Refresh Token"/>
+            <apex:commandButton action="{!creatingCheckMethod}"  rerender="theForm" status="statusLinkdln" value="create a Check"/>
+       </apex:pageBlock>
+    </apex:form>
+</apex:page>
