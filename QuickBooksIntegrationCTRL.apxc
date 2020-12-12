@@ -1,0 +1,152 @@
+public class QuickBooksIntegrationCTRL {
+    public boolean ToggleButton{get;set;}
+    private string AuthorizationCodeFromURL{get;set;}
+    public String ConnectedCompanyId { get; set; }
+    private list<integration__c> QBOAuthList;
+    
+    //constructor to get required token and urls
+    public QuickBooksIntegrationCTRL(){
+        AuthorizationCodeFromURL = ApexPages.currentPage().getParameters().get('code');
+        //	RealmID for the company that your app was granted access to.
+        ConnectedCompanyId = ApexPages.currentPage().getParameters().get('realmId');
+        if(AuthorizationCodeFromURL == null || AuthorizationCodeFromURL == ''){
+            ToggleButton = true;
+        }
+        else{
+            ToggleButton = false;
+        }
+        
+        QBOAuthList = new list<integration__c>();
+        QBOAuthList =[SELECT clientId__c,client_Secret__c,AccessTokenId__c, refresh_token__c,Access_token_url__c,AccessAndRefreshUrl__c,redirect_URL__c,Api_caller_Url_Sandbox__c, Expires_In__c, refresh_token_expire__c  FROM integration__c WHERE server_name__c ='QBO Integraion'];
+        
+        
+    }
+    public PageReference AuthoriztionWithQBO(){
+        system.debug('QBOAuthList'+QBOAuthList);
+        //constructing redirect url
+        string AuthUrl =QBOAuthList[0].Access_token_url__c+'?client_id='+QBOAuthList[0].clientId__c+'&response_type=code&scope=com.intuit.quickbooks.accounting&state=12345677dd&redirect_uri='+QBOAuthList[0].redirect_URL__c;
+        PageReference pagref = new PageReference(AuthUrl);
+        return pagref;
+    }
+    public void GetAccessCodeFromQBO(){
+        String errorMessage ='';
+        String encodedString = EncodingUtil.base64Encode(Blob.valueOf(QBOAuthList[0].clientId__c+':'+QBOAuthList[0].client_Secret__c));
+        String requestBody = 'grant_type=authorization_code&code='+AuthorizationCodeFromURL+'&redirect_uri='+QBOAuthList[0].redirect_URL__c;
+
+        Http httpRq = new Http();
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse httpRes = new HttpResponse();
+        httpReq.setMethod('POST');
+        httpReq.setEndpoint(QBOAuthList[0].AccessAndRefreshUrl__c);
+        httpReq.setHeader('Authorization' , 'Basic '+encodedString);
+        httpReq.setHeader('Content-Type' , 'application/x-www-form-urlencoded');
+        httpReq.setBody(requestBody);
+        try{
+            httpRes = httpRq.send(httpReq);
+            system.debug('inside'+httpRes.getBody() );
+            if(httpRes.getStatusCode() == 200){
+                Map<String, Object> returnedResponse = (Map<String, Object>)JSON.deserializeUntyped(httpRes.getBody());
+                String accessToken = (String)returnedResponse.get('access_token');
+                String refreshToken = (String)returnedResponse.get('refresh_token');
+                Decimal expiresIn = (Decimal)returnedResponse.get('expires_in');
+                Decimal expiresInRefToken = (Decimal)returnedResponse.get('x_refresh_token_expires_in');
+                if(refreshToken !='' && accessToken!=''){
+                    QBOAuthList[0].AccessTokenId__c=accessToken;
+                    QBOAuthList[0].refresh_token__c=refreshToken;
+                    QBOAuthList[0].Expires_In__c=expiresIn;
+                    QBOAuthList[0].refresh_token_expire__c=expiresInRefToken;
+                    update QBOAuthList;
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.CONFIRM,
+                                                               
+                                                               'Good!!!!!! ORG successful Integration with QuickBooks Online'));
+                }
+                
+            }
+            else{
+                ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,'Unexpected Error while communicating with Quickbooks API'+
+                                         'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode()));
+            }
+        }
+        catch(Exception e){
+            errorMessage=httpRes.getStatusCode()+'error'+httpRes.getBodyAsBlob();
+            system.debug('error'+e.getLineNumber()+e.getMessage()+e.getCause());
+        }
+    }
+    public void refreshTokenMethod(){
+        String errorMessage ='';
+        String encodedString = EncodingUtil.base64Encode(Blob.valueOf(QBOAuthList[0].clientId__c+':'+QBOAuthList[0].client_Secret__c));
+       String requestBody = 'grant_type=refresh_token&refresh_token='; 
+         if(QBOAuthList!=null && QBOAuthList[0].Refresh_Token__c != null){
+            requestBody+= QBOAuthList[0].Refresh_Token__c;
+        }else{
+            ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,'Refresh Token is NULL Refresh And authorize again'));
+        }
+        
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse httpRes = new HttpResponse();
+        Http http = new Http();
+        httpReq.setMethod('POST');
+        httpReq.setEndpoint(QBOAuthList[0].AccessAndRefreshUrl__c);
+        httpReq.setHeader('Authorization' , 'Basic '+encodedString);
+        httpReq.setHeader('Content-Type' , 'application/x-www-form-urlencoded');
+        httpReq.setBody(requestBody);
+        try{
+            // if Expired then get the new Token
+            //if(QBOAuthList != null && QBOAuthList[0].refresh_token_expire__c <= System.Now()){
+                httpRes = http.send(httpReq);
+                if(httpRes.getStatusCode() == 200){
+                    Map<String, Object> returnedResponse1 = (Map<String, Object>)JSON.deserializeUntyped(httpRes.getBody());
+                    // update query
+                    String accessToken = (String)returnedResponse1.get('access_token');
+                    String refreshToken = (String)returnedResponse1.get('refresh_token');
+                    Decimal expiresIn = (Decimal)returnedResponse1.get('expires_in');
+                    Decimal expiresInRefToken = (Decimal)returnedResponse1.get('x_refresh_token_expires_in');
+                    if(refreshToken !='' && accessToken!=''){
+                        QBOAuthList[0].AccessTokenId__c=accessToken;
+                        QBOAuthList[0].refresh_token__c=refreshToken;
+                        QBOAuthList[0].Expires_In__c=expiresIn;
+                        QBOAuthList[0].refresh_token_expire__c=expiresInRefToken;
+                        update QBOAuthList;
+                    }
+              //  }
+                else{
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,'Unexpected Error while communicating with Quickbooks API'+
+                                             'Status '+httpRes.getStatus()+' and Status Code '+httpRes.getStatuscode()));
+                }
+            }
+            
+        }
+        catch(exception e){
+            errorMessage=httpRes.getStatusCode()+'error'+httpRes.getBodyAsBlob();
+            system.debug('error'+e.getLineNumber()+e.getMessage()+e.getCause());
+        }
+        
+    }
+    public  void  creatingCheckMethod(){
+        //refreshTokenMethod();
+        String errorMessage ='';
+        String endPoint = QBOAuthList[0].Api_caller_Url_Sandbox__c+'v3/company/'+ ConnectedCompanyId+'/purchase?minorversion=40';
+       string payload='{ "PaymentType": "Check", "DocNumber": "62748", "AccountRef": { "name": "Cash and cash equivalents venky", "value": "131" }, "Line": [ { "DetailType": "AccountBasedExpenseLineDetail", "Description": "this from salesforce", "Amount": 10.0, "AccountBasedExpenseLineDetail": { "CustomerRef": { "value": "1", "name": "venkatesh" }, "AccountRef": { "name": "Meals and Entertainment", "value": "13" } } } ] }';
+        Http http = new Http();
+        HttpRequest httpReq = new HttpRequest();
+        HttpResponse httpRes = new HttpResponse();
+        httpReq.SetMethod('POST');
+        system.debug('endPoint'+endPoint);
+        httpReq.setEndpoint(endPoint);
+        httpReq.setHeader('Authorization', 'Bearer '+QBOAuthList[0].AccessTokenId__c);
+        httpReq.setHeader('Accept' , 'application/json');
+        httpReq.setHeader('Content-Type' , 'application/json');
+        httpReq.setBody(payload);
+        try{
+            httpRes = http.send(httpReq);
+            system.debug('httpRes>>>>'+httpRes.getStatusCode()+' '+httpRes.getStatus() );
+            system.debug('httpRes>>>>'+httpRes.getBody());
+        }
+        catch(System.Exception e){
+            System.debug('Exception found in class  method connectToQuickbooks ' + e.getMessage());
+            System.debug('Exception found in class  method connectToQuickbooks ' + e.getLineNumber());
+        } 
+        
+    }
+    
+}
