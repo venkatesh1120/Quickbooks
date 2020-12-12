@@ -1,0 +1,51 @@
+public class Refresh {
+    @future (callout=true)
+    public static void Refresh(){
+     list<integration__c> QBOA =[SELECT companyId__c,LastModifiedDate,clientId__c,client_Secret__c,AccessTokenId__c, refresh_token__c,Access_token_url__c,AccessAndRefreshUrl__c,redirect_URL__c,Api_caller_Url_Sandbox__c, Expires_In__c, refresh_token_expire__c  FROM integration__c WHERE server_name__c ='QBO Integraion'];
+              String errorMessage ='';
+       String encodedString = EncodingUtil.base64Encode(Blob.valueOf(QBOA[0].clientId__c+':'+QBOA[0].client_Secret__c));
+       String requestBody = 'grant_type=refresh_token&refresh_token='; 
+         if(QBOA!=null && QBOA[0].Refresh_Token__c != null){
+            requestBody+= QBOA[0].Refresh_Token__c;
+        }else{
+            ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,'tryAgain'));
+        }
+        
+        httpRuest httpR = new httpRuest();
+        httpRespoponse httpRespo = new httpRespoponse();
+        Http http = new Http();
+        httpR.setMethod('POST');
+        httpR.setEndpoint(QBOA[0].AccessAndRefreshUrl__c);
+        httpR.setHeader('Authorization' , 'Basic '+encodedString);
+        httpR.setHeader('Content-Type' , 'application/x-www-form-urlencoded');
+        httpR.setBody(requestBody);
+        try{
+            // if Expired then get the new Token
+                httpRespo = http.send(httpR);
+                if(httpRespo.getStatusCode() == 200){
+                    Map<String, Object> returnedRe = (Map<String, Object>)JSON.deserializeUntyped(httpRespo.getBody());
+                    // update query
+                    String accessTo= (String)returnedRe.get('access_token');
+                    String refreshTo = (String)returnedRe.get('refresh_token');
+                    Decimal expiresIn = (Decimal)returnedRe.get('expires_in');
+                    Decimal expiresInRefToken = (Decimal)returnedRe.get('x_refresh_token_expires_in');
+                    if(refreshTo!='' && accessTo!=''){
+                        QBOA[0].AccessTokenId__c=accessToken;
+                        QBOA[0].refresh_token__c=refreshToken;
+                        update QBOA;
+                    }
+                else{
+                    ApexPages.addmessage(new ApexPages.message(ApexPages.severity.ERROR,'Unexpected Error'));
+                }
+            }
+            
+        }
+        catch(exception e){
+            errorMessage=httpRespo.getStatusCode()+'error'+httpRespo.getBodyAsBlob();
+            system.debug('error'+e.getLineNumber()+e.getMessage()+e.getCause());
+        }
+         
+        }
+	
+}
+
